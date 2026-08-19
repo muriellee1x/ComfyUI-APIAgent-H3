@@ -2,8 +2,6 @@
 
 APIAgent 是一个 API-only ComfyUI 节点包，用于通过 OpenAI 兼容 API 执行内置 Skill，并生成、修复和校验 MiniMax H3 直播礼物提示词。
 
-本版本不包含本地 Qwen/Gemma4 推理，不加载 GGUF 模型，不依赖 `llama-cpp-python`。
-
 ## 节点
 
 - `APIAgent_SkillLoader`：加载并选择插件 `skills/` 目录中的 Skill。
