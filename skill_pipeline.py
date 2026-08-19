@@ -6,7 +6,7 @@ import re
 
 from PIL import Image
 
-from .skill_loader import 读取reference, 读取skill正文
+from .skill_loader import 构建skill选择, 读取reference, 读取skill正文
 
 
 H3模式 = ("T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA")
@@ -24,7 +24,9 @@ H3全参考字段 = (
     "non_diegetic_music",
 )
 
+低价直播礼物SKILL_ID = "h3-low-coin-gift-director"
 直播礼物SKILL_ID = "h3-live-gift-director"
+直播礼物SKILL_IDS = {低价直播礼物SKILL_ID, 直播礼物SKILL_ID}
 直播礼物业务资料 = (
     "references/price-effect-system.md",
     "references/gift-story-reasoning.md",
@@ -387,6 +389,12 @@ def _礼物h3_references(skill: dict, task: str) -> list[str]:
     mode = _解析h3模式(task)
     if not mode:
         raise ValueError("直播礼物 Skill 需要明确 H3 模式；请连接“直播礼物任务构建器”或通用 H3任务构建器。")
+    runtime_references = list(skill.get("runtime_references") or [])
+    if runtime_references:
+        missing = [path for path in runtime_references if path not in skill.get("references", [])]
+        if missing:
+            raise ValueError("直播礼物 Skill manifest 声明了不存在的 reference：" + "、".join(missing))
+        return runtime_references
     paths = list(直播礼物业务资料) + [直播礼物基础规范]
     if mode == "Ref2VA":
         paths.append(直播礼物全参考规范)
@@ -499,7 +507,16 @@ class APIAgent直播礼物任务构建器:
         return {
             "required": {
                 "礼物名称": ("STRING", {"default": ""}),
-                "礼物价格": ("INT", {"default": 2000, "min": 1000, "max": 3000, "step": 100}),
+                "礼物价格": (
+                    "INT",
+                    {
+                        "default": 2000,
+                        "min": 0,
+                        "max": 3000,
+                        "step": 1,
+                        "tooltip": "0–999 自动路由到低价礼物 Skill；1000–3000 自动路由到高价礼物 Skill。",
+                    },
+                ),
                 "创作需求": ("STRING", {"default": "", "multiline": True}),
                 "参考图用途": (
                     ["普通参考素材（Ref2VA）", "无参考图（T2VA）", "精确首帧（I2VA）", "精确首尾帧（FL2VA）", "精确尾帧（L2VA）"],
@@ -516,8 +533,8 @@ class APIAgent直播礼物任务构建器:
             }
         }
 
-    RETURN_TYPES = ("STRING", "INT", "FLOAT")
-    RETURN_NAMES = ("直播礼物H3任务", "H3帧数", "实际时长")
+    RETURN_TYPES = ("STRING", "INT", "FLOAT", "APIAGENT_SKILL")
+    RETURN_NAMES = ("直播礼物H3任务", "H3帧数", "实际时长", "Skill路由")
     FUNCTION = "run"
     CATEGORY = "APIAgent/直播礼物"
 
@@ -526,8 +543,14 @@ class APIAgent直播礼物任务构建器:
         if not gift_name:
             raise ValueError("礼物名称不能为空。")
         price = int(礼物价格)
-        if not 1000 <= price <= 3000:
-            raise ValueError("直播礼物 Skill 只覆盖 1000–3000 抖币。")
+        if not 0 <= price <= 3000:
+            raise ValueError("直播礼物价格必须在 0–3000 抖币之间。")
+        if price < 1000:
+            skill_id = 低价直播礼物SKILL_ID
+            profile = "LOW_COIN_GIFT"
+        else:
+            skill_id = 直播礼物SKILL_ID
+            profile = "LIVE_GIFT"
         mode = {
             "普通参考素材（Ref2VA）": "Ref2VA",
             "无参考图（T2VA）": "T2VA",
@@ -544,10 +567,11 @@ class APIAgent直播礼物任务构建器:
             "Ref2VA": "连接 1–9 张普通参考图片；图片提供主体、环境、材质、风格或构图语言，不把它们自动解释为精确首尾帧。",
         }[mode]
         parts = [
-            "[QWEN_TE_H3_PROFILE=LIVE_GIFT]",
+            f"[QWEN_TE_H3_PROFILE={profile}]",
+            f"[QWEN_TE_SKILL_ID={skill_id}]",
             f"[QWEN_TE_H3_MODE={mode}]",
             f"[QWEN_TE_H3_DURATION={actual_duration:.2f}]",
-            "请执行当前连接的 h3-live-gift-director Skill，并只输出可直接交给 MiniMax H3 的最终英文提示词。",
+            f"请执行当前连接的 {skill_id} Skill，并只输出可直接交给 MiniMax H3 的最终英文提示词。",
             f"礼物名称：{gift_name}",
             f"礼物价格：{price} 抖币",
             f"用户目标时长：{float(视频时长):.2f} 秒",
@@ -557,6 +581,8 @@ class APIAgent直播礼物任务构建器:
             f"镜头结构：{镜头结构}",
             f"参考图片规则：{image_rule}",
         ]
+        if price < 99:
+            parts.append(f"价格校准规则：保留用户输入价格 {price} 抖币，但效果规格按 99 抖币最低档执行。")
         request = str(创作需求 or "").strip()
         if request:
             parts.append(f"创作需求：\n{request}")
@@ -565,7 +591,7 @@ class APIAgent直播礼物任务构建器:
         constraints = str(额外约束 or "").strip()
         if constraints:
             parts.append(f"额外约束：\n{constraints}")
-        return "\n\n".join(parts), aligned_frames, actual_duration
+        return "\n\n".join(parts), aligned_frames, actual_duration, 构建skill选择(skill_id)
 
 
 class APIAgentH3提示词校验:

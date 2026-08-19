@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import builtins
 import json
 import math
 import re
@@ -15,7 +16,7 @@ import comfy.model_management as mm
 
 from .skill_loader import 获取skill, 读取skill正文
 from .skill_pipeline import (
-    直播礼物SKILL_ID,
+    直播礼物SKILL_IDS,
     _h3_reference,
     _构建用户内容,
     _构建系统提示词,
@@ -78,8 +79,12 @@ class API请求错误(RuntimeError):
 
 
 class _API密钥缓存:
-    _values: dict[str, str] = {}
-    _lock = threading.Lock()
+    _state = getattr(builtins, "_APIAGENT_H3_KEY_CACHE", None)
+    if not isinstance(_state, dict):
+        _state = {"values": {}, "lock": threading.Lock()}
+        setattr(builtins, "_APIAGENT_H3_KEY_CACHE", _state)
+    _values: dict[str, str] = _state["values"]
+    _lock = _state["lock"]
     _max_entries = 128
 
     @classmethod
@@ -210,10 +215,10 @@ def _规范化API配置(value: dict) -> dict:
     preset.update(
         {
             "服务预设": preset_name,
-            "上下文长度": int(value.get("上下文长度") or 4096),
+            "上下文长度": int(value.get("上下文长度") or 119808),
             "支持图片": bool(value.get("支持图片", True)),
             "图片细节": str(value.get("图片细节") or "auto"),
-            "请求超时秒": int(value.get("请求超时秒") or 10),
+            "请求超时秒": int(value.get("请求超时秒") or 300),
             "失败重试次数": int(value.get("失败重试次数") or 1),
             "输出Token字段": str(value.get("输出Token字段") or preset.get("输出Token字段") or "自动选择"),
             "发送高级采样参数": bool(value.get("发送高级采样参数", False)),
@@ -705,14 +710,14 @@ class APIAgentAPI配置:
                 ),
                 "上下文长度": (
                     "INT",
-                    {"default": 4096, "min": 4096, "max": 1048576, "step": 1024, "tooltip": "用于发送前的近似预算检查，不会修改服务端模型。"},
+                    {"default": 119808, "min": 4096, "max": 1048576, "step": 1024, "tooltip": "用于发送前的近似预算检查，不会修改服务端模型。"},
                 ),
                 "支持图片": ("BOOLEAN", {"default": True}),
                 "图片细节": (["auto", "high", "low"], {"default": "auto"}),
                 "请求超时秒": (
                     "INT",
                     {
-                        "default": 10,
+                        "default": 300,
                         "min": 10,
                         "max": 600,
                         "step": 10,
@@ -858,7 +863,7 @@ class APIAgentSkillAPI单次执行:
         h3_mode = _解析h3模式(task) if skill["id"].startswith("h3-") else ""
         h3_duration = _解析h3时长(task) if h3_mode else 0.0
 
-        if skill["id"] == 直播礼物SKILL_ID and 参考资料策略 != "不加载":
+        if skill["id"] in 直播礼物SKILL_IDS and 参考资料策略 != "不加载":
             reference_paths = _礼物h3_references(skill, task)
         elif 参考资料策略 == "加载全部":
             reference_paths = list(skill.get("references") or [])
@@ -895,7 +900,7 @@ class APIAgentSkillAPI单次执行:
         result_text = _API推理(client, messages, settings)
         if result_text.startswith("QWEN_TE_INPUT_ERROR:"):
             raise ValueError(result_text.removeprefix("QWEN_TE_INPUT_ERROR:").strip())
-        if skill["id"] == 直播礼物SKILL_ID and h3_mode:
+        if skill["id"] in 直播礼物SKILL_IDS and h3_mode:
             result_text, external_notice = _拆分礼物外部提示(result_text, h3_mode)
             if external_notice:
                 print(f"[APIAgent API] 直播礼物外部提示：{external_notice}")
@@ -923,7 +928,7 @@ class APIAgentSkillAPI单次执行:
                 result_text = _API推理(client, repair_messages, settings, stage="H3自动修复")
                 if result_text.startswith("QWEN_TE_INPUT_ERROR:"):
                     raise ValueError(result_text.removeprefix("QWEN_TE_INPUT_ERROR:").strip())
-                if skill["id"] == 直播礼物SKILL_ID:
+                if skill["id"] in 直播礼物SKILL_IDS:
                     result_text, external_notice = _拆分礼物外部提示(result_text, h3_mode)
                     if external_notice:
                         print(f"[APIAgent API] 直播礼物外部提示：{external_notice}")

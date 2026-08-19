@@ -6,9 +6,10 @@
   "skill_file": "SKILL.md",
   "price_range": {
     "currency": "douyin_coin",
-    "minimum": 99,
+    "minimum": 0,
     "maximum": 999,
-    "default": 499
+    "default": 499,
+    "calibration_floor": 99
   },
   "supported_modes": ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"],
   "image_requirements": {

@@ -2,7 +2,12 @@
   "schema_version": 1,
   "profile": "LOW_COIN_GIFT",
   "currency": "douyin_coin",
-  "range": {"minimum": 99, "maximum": 999, "default": 499},
+  "range": {"minimum": 0, "maximum": 999, "default": 499, "calibration_floor": 99},
+  "price_calibration": {
+    "formula": "effective_price = max(input_price, 99)",
+    "preserve_input_price": true,
+    "reason": "Inputs below 99 use the minimum supported effect capacity without rewriting the user's price."
+  },
   "frame_model": {
     "fps": 24,
     "legal_frame_rule": "5 + 17*n",
@@ -10,7 +15,7 @@
   },
   "tiers": [
     {
-      "minimum": 99,
+      "minimum": 0,
       "maximum": 299,
       "product_duration_seconds": 3,
       "frames": 73,
@@ -43,7 +48,7 @@
   },
   "background_policy": [
     {
-      "minimum": 99,
+      "minimum": 0,
       "maximum": 499,
       "kind": "uniform_solid_color",
       "fixed_color_value": false,

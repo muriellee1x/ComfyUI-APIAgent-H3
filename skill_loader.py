@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import json
 import re
 
 
@@ -52,6 +53,19 @@ def _读取meta值(skill_dir: str, key: str) -> str:
     return ""
 
 
+def _读取giftmaster_manifest(skill_dir: str) -> dict:
+    path = os.path.join(skill_dir, "giftmaster.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        data = json.loads(_读取文本(path))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{os.path.basename(skill_dir)}/giftmaster.json 不是有效 JSON。") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{os.path.basename(skill_dir)}/giftmaster.json 顶层必须是对象。")
+    return data
+
+
 def _列出references(skill_dir: str) -> list[str]:
     reference_dir = os.path.join(skill_dir, "references")
     if not os.path.isdir(reference_dir):
@@ -82,7 +96,11 @@ def 发现skills() -> list[dict]:
 
         content_path = chinese_path if os.path.isfile(chinese_path) else default_path
         metadata = _解析前置信息(_读取文本(content_path))
-        name = _读取meta值(skill_dir, "display-name-zh") or metadata.get("name") or skill_id
+        manifest = _读取giftmaster_manifest(skill_dir)
+        runtime_references = manifest.get("runtime_references", [])
+        if not isinstance(runtime_references, list) or not all(isinstance(item, str) for item in runtime_references):
+            runtime_references = []
+        name = _读取meta值(skill_dir, "display-name-zh") or manifest.get("display_name") or metadata.get("name") or skill_id
         description = _读取meta值(skill_dir, "summary-cn") or metadata.get("description") or ""
         label = f"{name} [{skill_id}]" if name != skill_id else skill_id
         skills.append(
@@ -93,6 +111,8 @@ def 发现skills() -> list[dict]:
                 "description": description,
                 "skill_file": os.path.basename(content_path),
                 "references": _列出references(skill_dir),
+                "runtime_references": [str(item).replace("\\", "/").strip("/") for item in runtime_references],
+                "profile": str(manifest.get("profile") or ""),
             }
         )
     return skills
@@ -100,6 +120,14 @@ def 发现skills() -> list[dict]:
 
 def 获取skill(skill_id: str) -> dict | None:
     return next((skill for skill in 发现skills() if skill["id"] == skill_id), None)
+
+
+def 构建skill选择(skill_id: str = "") -> dict:
+    skills = 发现skills()
+    selected = str(skill_id or "").strip()
+    if selected and not any(skill["id"] == selected for skill in skills):
+        raise ValueError(f"找不到 Skill：{selected}，请检查插件的 skills 目录。")
+    return {"selected": selected, "skills": skills}
 
 
 def 读取skill正文(skill: dict) -> str:
@@ -139,11 +167,11 @@ class APIAgentSkill加载器:
     CATEGORY = "APIAgent/Skill流水线"
 
     def run(self, skill):
-        skills = 发现skills()
         selected = ""
         if skill != 自动选择:
+            skills = 发现skills()
             selected_skill = next((item for item in skills if item["label"] == skill or item["id"] == skill), None)
             if selected_skill is None:
                 raise ValueError(f"找不到 Skill：{skill}，请刷新节点后重新选择。")
             selected = selected_skill["id"]
-        return ({"selected": selected, "skills": skills},)
+        return (构建skill选择(selected),)
