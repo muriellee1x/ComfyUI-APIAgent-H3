@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "style.definition",
+      "path": "references/visual-style-rules.md",
+      "sections": ["Definition", "Output Discipline"],
+      "summary": "区分文化、地域、时代、类型与艺术审美风格，避免把渲染媒介或质量词误写成风格。",
+      "use_when": "任务或图片包含明确风格、时代、地域、类型审美或需要推断风格字段。",
+      "avoid_when": "任务只需要普通主体展示且没有任何风格判断。",
+      "requires": [],
+      "priority": 20
+    },
+    {
+      "id": "style.examples",
+      "path": "references/visual-style-rules.md",
+      "sections": ["Examples"],
+      "summary": "使用合规的风格与渲染字段示例校准写法。",
+      "use_when": "风格和渲染媒介容易混淆，或需要具体字段写法示例。",
+      "avoid_when": "风格类别已经明确且表达无歧义。",
+      "requires": ["style.definition"],
+      "priority": 21
+    },
+    {
+      "id": "wardrobe.workflow-density",
+      "path": "references/wardrobe-style-rules.md",
+      "sections": ["Wardrobe Design Workflow", "Design Density By Price"],
+      "summary": "按可见范围和价位确定服装轮廓、结构密度、材质与配饰数量。",
+      "use_when": "画面出现可见人物、服装、盔甲、鞋履、配饰或人物妆造参考。",
+      "avoid_when": "没有可见人物或人形主体。",
+      "requires": [],
+      "priority": 30
+    },
+    {
+      "id": "wardrobe.construction-material",
+      "path": "references/wardrobe-style-rules.md",
+      "sections": ["Construction Vocabulary", "Material And Surface"],
+      "summary": "补充领口、腰部、袖型、层次、面料和表面结构词汇。",
+      "use_when": "人物服装需要可生成的结构、面料或表面细节。",
+      "avoid_when": "服装被完全遮挡或人物仅为无细节背景人群。",
+      "requires": ["wardrobe.workflow-density"],
+      "priority": 31
+    },
+    {
+      "id": "wardrobe.decoration-theme",
+      "path": "references/wardrobe-style-rules.md",
+      "sections": ["Decoration And Accessories", "Theme Patterns"],
+      "summary": "选择有明确位置和主题功能的装饰、配饰与服装主题组合。",
+      "use_when": "主题依赖礼服、民族、复古、仙侠、海洋或功能服装设计。",
+      "avoid_when": "主体造型已经足够清晰，继续装饰会削弱主题。",
+      "requires": ["wardrobe.construction-material"],
+      "priority": 32
+    },
+    {
+      "id": "wardrobe.visibility-safety",
+      "path": "references/wardrobe-style-rules.md",
+      "sections": ["Crop And Visibility", "Hard Rules"],
+      "summary": "处理半身至小腿以上裁切、遮挡、服装覆盖和装饰位置硬规则。",
+      "use_when": "人物采用半身、腰部以上、大腿以上、膝上、小腿以上裁切，或存在水面、桌面等明显遮挡。",
+      "avoid_when": "没有可见人物。",
+      "requires": ["wardrobe.workflow-density"],
+      "priority": 33
+    }
+  ]
+}

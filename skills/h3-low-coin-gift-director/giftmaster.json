@@ -1,15 +1,15 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "h3-low-coin-gift-director",
   "display_name": "H3 低价直播礼物导演",
   "profile": "LOW_COIN_GIFT",
   "skill_file": "SKILL.md",
+  "registry_file": "registry.json",
   "price_range": {
     "currency": "douyin_coin",
-    "minimum": 0,
+    "minimum": 99,
     "maximum": 999,
-    "default": 499,
-    "calibration_floor": 99
+    "default": 499
   },
   "supported_modes": ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"],
   "image_requirements": {
@@ -19,11 +19,20 @@
     "L2VA": {"minimum": 1, "maximum": 1},
     "Ref2VA": {"minimum": 1, "maximum": 9}
   },
-  "runtime_references": [
-    "references/price-profile.json",
-    "references/format.md"
+  "mandatory_rules": [
+    "rules/price-effect-system.md",
+    "rules/price-effect-profile.json",
+    "rules/h3-prompt-writing-base-en.txt",
+    "rules/h3-prompt-writing-ref-en.txt",
+    "rules/emotion-rules.md"
   ],
-  "evaluation_only_references": [],
+  "conditional_rules": [
+    {
+      "path": "rules/constant-solid-background.md",
+      "when": "The effective task contains [APIAGENT_GIFT_BG_COLOR=#RRGGBB]."
+    }
+  ],
+  "evaluation_only_references": ["references/evaluation-cases.md"],
   "output_language": "en",
   "output_kind": "h3_prompt"
 }

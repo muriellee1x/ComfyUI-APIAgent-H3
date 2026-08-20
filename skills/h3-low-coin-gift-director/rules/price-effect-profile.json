@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "currency": "douyin_coin",
+  "scope": {
+    "minimum": 99,
+    "maximum": 999,
+    "upper_skill_starts_at": 1000
+  },
+  "defaults": {
+    "price": 499,
+    "aspect_ratio": "1:1",
+    "shots": 1,
+    "overall_soundscape": "N/A",
+    "non_diegetic_music": "N/A",
+    "playback": "single"
+  },
+  "tiers": [
+    {
+      "minimum": 99,
+      "maximum": 299,
+      "target_duration_seconds": 3.0,
+      "h3_aligned_frames": 73,
+      "h3_effective_duration_seconds": 3.041667,
+      "background": "uniform_solid_required",
+      "background_color_input": "default_#00FF00_when_empty",
+      "shots": 1,
+      "capacity": "one subject, one entrance-display-exit chain, one primary motion or state change, and at most one localized supporting effect system"
+    },
+    {
+      "minimum": 300,
+      "maximum": 499,
+      "target_duration_seconds": 4.0,
+      "h3_aligned_frames": 90,
+      "h3_effective_duration_seconds": 3.75,
+      "background": "uniform_solid_required",
+      "background_color_input": "default_#00FF00_when_empty",
+      "shots": 1,
+      "capacity": "one subject, one developed entrance-display-exit chain, one primary motion or state change, and one subordinate material or effect response"
+    },
+    {
+      "minimum": 500,
+      "maximum": 999,
+      "target_duration_seconds": 4.0,
+      "h3_aligned_frames": 90,
+      "h3_effective_duration_seconds": 3.75,
+      "background": "compact_scene_or_uniform_solid",
+      "background_color_input": "optional_exact_hex_applies_when_present",
+      "shots": 1,
+      "capacity": "one primary subject or supplied group, one developed entrance-display-exit chain, one main gift beat, and a compact background or one subordinate environmental response when justified"
+    }
+  ],
+  "allowed_aspect_ratios": ["1:1", "4:3"],
+  "motion_families": ["trajectory", "state_change", "subject_action"],
+  "hard_requirements": [
+    "single_shot",
+    "silent_audio",
+    "single_play_price",
+    "complete_exit_or_exact_endpoint_settle",
+    "positive_prompt_mechanics"
+  ]
+}

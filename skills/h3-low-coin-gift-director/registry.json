@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "story.one-chain",
+      "path": "references/gift-story-reasoning.md",
+      "sections": ["One-chain principle", "Time budgets", "Entry and exit grammar", "Tempo", "Subject and anchor priority", "Main-beat readability"],
+      "summary": "Build one readable entrance-display-exit chain, fit it to the tier duration, preserve anchors, and complete the exit or exact endpoint settle.",
+      "use_when": "The motion chain, timing, entry, exit, tempo, or main beat needs to be inferred or checked.",
+      "avoid_when": "The complete compliant one-shot motion chain is already specified.",
+      "requires": [],
+      "priority": 20
+    },
+    {
+      "id": "story.motion-family",
+      "path": "references/gift-story-reasoning.md",
+      "sections": ["Motion-family selection"],
+      "summary": "Choose exactly one primary trajectory, state-change, or subject-action family and specify its physical mechanics.",
+      "use_when": "The user supplies a subject or theme but not a complete motion mechanism.",
+      "avoid_when": "A compliant primary motion family is explicitly fixed.",
+      "requires": ["story.one-chain"],
+      "priority": 30
+    },
+    {
+      "id": "motion.directed-rhythm",
+      "path": "references/four-second-motion-direction.md",
+      "sections": ["Directed phase budget", "Nonlinear motion mechanics"],
+      "summary": "Apply asymmetric phase budgets, final-ten-frame protection, acceleration, deceleration, overshoot, rebound, and complete settling.",
+      "use_when": "The 300-999 motion needs stronger four-second direction, or a 99-299 action needs a compressed directed rhythm.",
+      "avoid_when": "The task already specifies a complete compliant phase rhythm and nonlinear motion mechanism.",
+      "requires": ["story.motion-family"],
+      "priority": 35
+    },
+    {
+      "id": "motion.component-climax",
+      "path": "references/four-second-motion-direction.md",
+      "sections": ["Multi-component staging", "Semantic climax selection", "Final-ten-frame cooling"],
+      "summary": "Stage supplied components causally, choose a function-specific climax, and cool one sourced effect family in the final ten frames.",
+      "use_when": "The gift contains multiple components, lacks a subject-specific main beat, or needs a readable effect peak and cooling behavior.",
+      "avoid_when": "A single-component task already defines its causal climax, recovery, and effect decay precisely.",
+      "requires": ["motion.directed-rhythm", "effects.low-tier-causality"],
+      "priority": 45
+    },
+    {
+      "id": "camera.quantified-safe-composition",
+      "path": "references/four-second-motion-direction.md",
+      "sections": ["Quantified safe composition"],
+      "summary": "Use quantified central-safe sizing and reserve breathing room for delayed appendages and attached effects.",
+      "use_when": "Depth approach, large motion, ribbons, wings, trails, hanging parts, or an expanding effect risks cropping the defining silhouette.",
+      "avoid_when": "The subject and every attached effect already have explicit safe framing and breathing room.",
+      "requires": ["camera.low-tier-one-shot"],
+      "priority": 55
+    },
+    {
+      "id": "effects.low-tier-causality",
+      "path": "references/effect-and-causality.md",
+      "sections": ["One-system default", "Source-action-result test", "Price calibration", "Solid-background containment", "Physical examples"],
+      "summary": "Limit the gift to one sourced effect system, apply source-action-result causality, price calibration, decay, and solid-field containment.",
+      "use_when": "Effects, trails, particles, glow, transformation, material response, or environmental response appear or must be inferred.",
+      "avoid_when": "The task explicitly requires a purely physical effect-free motion.",
+      "requires": [],
+      "priority": 40
+    },
+    {
+      "id": "camera.low-tier-one-shot",
+      "path": "references/camera-transition-continuity.md",
+      "sections": ["One-shot contract", "Camera job", "Framing and safe motion", "Solid-background camera behavior", "Continuity variables", "Exit completion"],
+      "summary": "Keep one continuous viewpoint, choose one camera job, preserve safe framing and background stability, and complete the exit.",
+      "use_when": "Camera behavior, subject tracking, framing, background behavior, or exit composition needs to be inferred or checked.",
+      "avoid_when": "All one-shot camera and exit mechanics are already explicitly compliant.",
+      "requires": [],
+      "priority": 50
+    },
+    {
+      "id": "risk.people-and-contact",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["People and identity", "Hands and contact", "Couples and gentle interaction"],
+      "summary": "Protect human identity, hands, contact order, anatomy, body distance, and stable interaction.",
+      "use_when": "A person, hand, couple, touch, handoff, instrument contact, or close interaction appears in text or images.",
+      "avoid_when": "No human or human-like contact appears.",
+      "requires": [],
+      "priority": 60
+    },
+    {
+      "id": "risk.animals-and-appendages",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Animals", "Antlers, horns, wings, tails, and ribbons"],
+      "summary": "Preserve animal anatomy, gait, orientation, attachments, and delayed appendage motion.",
+      "use_when": "Animals, fantasy creatures, antlers, horns, wings, tails, or ribbons appear.",
+      "avoid_when": "No animal or appendage risk appears.",
+      "requires": [],
+      "priority": 61
+    },
+    {
+      "id": "risk.vehicles-and-machinery",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Vehicles and trains", "Amusement rides and mechanical facilities", "Musical instruments"],
+      "summary": "Preserve vehicle direction, wheel and carriage logic, mechanical support geometry, and instrument anatomy.",
+      "use_when": "Vehicles, trains, rides, tracks, wheels, machines, or musical instruments appear.",
+      "avoid_when": "No vehicle, machine, ride, or instrument appears.",
+      "requires": [],
+      "priority": 62
+    },
+    {
+      "id": "risk.transformation-and-materials",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Growth and assembly", "Dimensional transformation", "Particles, petals, snow, and dust", "Fireworks", "Water and reflections"],
+      "summary": "Control structural growth, dimensional conversion, particles, fireworks, water, ripples, and reflections inside one action chain.",
+      "use_when": "Assembly, growth, flattening, particles, petals, snow, dust, fireworks, water, splashes, or reflections appear.",
+      "avoid_when": "No transformation or material-system risk appears.",
+      "requires": ["effects.low-tier-causality"],
+      "priority": 63
+    },
+    {
+      "id": "risk.solid-background-and-exit",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Solid-background keying", "Gift exit"],
+      "summary": "Keep the required uniform background unchanged and complete a physically readable exit without remnants.",
+      "use_when": "Price is below 500, an exact background marker is active, or the subject/effect must leave, retract, close, compact, or fade out.",
+      "avoid_when": "Price is 500-999 without an exact background marker, and an exact final-frame endpoint replaces the ordinary exit.",
+      "requires": ["camera.low-tier-one-shot"],
+      "priority": 70
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "story.visual-foundation",
+      "path": "references/gift-story-reasoning.md",
+      "sections": ["Build from visual affordances", "Creative expansion beyond the frame", "Emotional temperature and action density", "Pose formation and editorial ellipsis", "Environmental performance layer"],
+      "summary": "Build the story from image affordances, emotional temperature, safe pose changes, and causal environmental performance.",
+      "use_when": "Images or creative text leave story development, motion affordances, pose changes, or secondary environmental action to infer.",
+      "avoid_when": "The user already supplies a fully specified causal timeline that needs no expansion.",
+      "requires": [],
+      "priority": 20
+    },
+    {
+      "id": "story.archetype",
+      "path": "references/gift-story-reasoning.md",
+      "sections": ["Narrative archetypes"],
+      "summary": "Choose a suitable gift narrative archetype such as discovery, formation, awakening, passage, encounter, ride, festival, giving, or blessing.",
+      "use_when": "The task supplies a theme or image but no complete story mechanism.",
+      "avoid_when": "The user explicitly fixes the plot and action chain.",
+      "requires": ["story.visual-foundation"],
+      "priority": 30
+    },
+    {
+      "id": "story.capacity-and-climax",
+      "path": "references/gift-story-reasoning.md",
+      "sections": ["Value curve", "Time budgeting", "Two-shot story architecture", "Action-capacity budget", "Reference-anchor priority", "Climax design"],
+      "summary": "Budget story phases, action capacity, reference anchors, shot architecture, and the moving climax inside the available duration.",
+      "use_when": "The task uses multiple shots, a dense action request, a key visual anchor, or needs a designed climax.",
+      "avoid_when": "A minimal one-action continuous shot is already completely specified.",
+      "requires": [],
+      "priority": 40
+    },
+    {
+      "id": "effects.necessity-and-budget",
+      "path": "references/effect-and-causality.md",
+      "sections": ["Zero-effect default", "Effect necessity test", "Guiding-object gate", "Effect budget", "Physical examples"],
+      "summary": "Decide whether effects are necessary, enforce visible causality, reject invented guide objects, and control effect layering.",
+      "use_when": "The request mentions glow, particles, transformation, magic, weather response, material effects, or leaves effects to infer.",
+      "avoid_when": "The task explicitly requires an effect-free physical animation with no ambiguous effect mechanism.",
+      "requires": [],
+      "priority": 50
+    },
+    {
+      "id": "camera.shot-design",
+      "path": "references/camera-transition-continuity.md",
+      "sections": ["Camera quality baseline", "Useful camera patterns", "Functional shot assignment", "In-shot camera grammar", "Multi-shot contrast contract", "Continuous-take rule", "Final camera settle"],
+      "summary": "Assign camera jobs, functional framing, shot contrast, continuous-take behavior, and a controlled moving ending.",
+      "use_when": "The task asks for camera design, functional close-ups, multiple shots, a continuous take, or a strong cover reveal.",
+      "avoid_when": "Camera behavior is fully and coherently specified by the user.",
+      "requires": [],
+      "priority": 60
+    },
+    {
+      "id": "camera.transition-and-continuity",
+      "path": "references/camera-transition-continuity.md",
+      "sections": ["Transition priority", "Seamless-but-distinct protocol", "Transition-family selection", "Transition choice", "Failure patterns to reject", "Full-occlusion rule", "Continuity contract"],
+      "summary": "Select physically motivated transition families while preserving only necessary continuity and creating a real editorial change.",
+      "use_when": "There are two or three shots, an occlusion, chase, traversal, match, POV change, hidden transition, or difficult posture change.",
+      "avoid_when": "The final design is a simple single shot with no viewpoint conversion.",
+      "requires": ["camera.shot-design"],
+      "priority": 70
+    },
+    {
+      "id": "risk.people-and-contact",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["People and identity", "Hands and contact", "Couples and gentle interaction"],
+      "summary": "Protect human identity, hands, contact order, anatomy, body distance, and stable interaction.",
+      "use_when": "A person, hand, couple, embrace, touch, gift handoff, instrument contact, or close human interaction appears in text or images.",
+      "avoid_when": "No human or human-like contact appears.",
+      "requires": [],
+      "priority": 80
+    },
+    {
+      "id": "risk.animals-and-appendages",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Animals", "Antlers, horns, wings, tails, and ribbons"],
+      "summary": "Preserve animal anatomy, gait, orientation, attachments, and delayed appendage motion.",
+      "use_when": "Animals, fantasy creatures, antlers, horns, wings, tails, or long ribbons appear.",
+      "avoid_when": "No animal or appendage risk appears.",
+      "requires": [],
+      "priority": 81
+    },
+    {
+      "id": "risk.vehicles-and-machinery",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Vehicles and trains", "Amusement rides and mechanical facilities", "Musical instruments"],
+      "summary": "Preserve vehicle direction, wheel and carriage logic, mechanical support geometry, and instrument anatomy and hand roles.",
+      "use_when": "Vehicles, trains, rides, machines, tracks, wheels, or musical instruments appear.",
+      "avoid_when": "No vehicle, machine, ride, or instrument appears.",
+      "requires": [],
+      "priority": 82
+    },
+    {
+      "id": "risk.transformation-and-materials",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Growth and assembly", "Dimensional transformation", "Particles, petals, snow, and dust", "Fireworks", "Water and reflections"],
+      "summary": "Control structural growth, dimensional conversion, sourced particles, fireworks sequencing, water, ripples, and reflections.",
+      "use_when": "The story includes assembly, growth, flattening, particles, petals, snow, dust, fireworks, water, splashes, or reflections.",
+      "avoid_when": "No transformation or material-system risk appears.",
+      "requires": ["effects.necessity-and-budget"],
+      "priority": 83
+    },
+    {
+      "id": "risk.dynamic-ending",
+      "path": "references/subject-risk-modules.md",
+      "sections": ["Dynamic cover ending"],
+      "summary": "Keep exposure, identity, color, framing, and appropriate residual motion stable through the final cover moment.",
+      "use_when": "The task needs a cover reveal, climax pose, exact ending, or visually dense final moment.",
+      "avoid_when": "The final state is already exhaustively specified and validated.",
+      "requires": [],
+      "priority": 90
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "id": "image-live-gift-prompt-director",
+  "display_name": "直播礼物图像提示词导演",
+  "profile": "LIVE_GIFT_IMAGE",
+  "skill_file": "SKILL.md",
+  "registry_file": "registry.json",
+  "price_range": {
+    "currency": "douyin_coin",
+    "minimum": 1000,
+    "maximum": 3000,
+    "default": 2000
+  },
+  "mandatory_rules": [
+    "rules/price-effect-system.md",
+    "rules/color-style-rules.md",
+    "rules/prompt-patterns.md",
+    "rules/emotion-rules.md",
+    "rules/prompt-logic-audit.md"
+  ],
+  "supports_reference_images": true,
+  "maximum_reference_images": 9,
+  "output_languages": ["zh", "en"],
+  "output_kind": "bilingual_image_prompt"
+}

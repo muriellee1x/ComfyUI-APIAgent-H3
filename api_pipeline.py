@@ -17,19 +17,28 @@ import comfy.model_management as mm
 from .skill_loader import 获取skill, 读取skill正文
 from .skill_pipeline import (
     直播礼物SKILL_IDS,
+    直播礼物图像SKILL_IDS,
+    低价直播礼物SKILL_ID,
+    低价直播礼物图像SKILL_ID,
+    直播礼物图像SKILL_ID,
     _h3_reference,
     _构建用户内容,
     _构建系统提示词,
+    _构建图像礼物资源,
     _拆分礼物外部提示,
     _收集图片,
+    _构建礼物资源,
     _检查h3图片数量,
     _清理最终文本,
-    _礼物h3_references,
+    _礼物registry摘要,
     _解析h3时长,
     _解析h3模式,
+    _解析礼物价格,
+    _解析礼物registry选择,
     _解析reference选择,
     _计算上下文预算,
     _默认单次设置,
+    规范化低价h3硬约束,
     校验h3提示词,
 )
 
@@ -442,6 +451,7 @@ class _远程API客户端:
             "Reference路由": 0,
             "最终生成": 0,
             "H3自动修复": 0,
+            "图像提示词修复": 0,
         }
 
     def _headers(self, request_id: str) -> dict[str, str]:
@@ -586,7 +596,7 @@ class _远程API客户端:
         ]
         lines.extend(
             f"{stage}请求：{self.stage_request_counts.get(stage, 0)}"
-            for stage in ("Skill路由", "Reference路由", "最终生成", "H3自动修复")
+            for stage in ("Skill路由", "Reference路由", "最终生成", "H3自动修复", "图像提示词修复")
         )
         if self.total_tokens:
             lines.append(
@@ -666,7 +676,7 @@ def _自动选择references_api(client: _远程API客户端, skill: dict, task: 
         if required_tokens > prompt_budget:
             raise ValueError(
                 f"Reference路由失败：reference 选择估算需要 {required_tokens} tokens，"
-                f"超过可用输入上下文 {prompt_budget}。请提高 API上下文长度，或使用“加载全部”。"
+                f"超过可用输入上下文 {prompt_budget}。请提高 API上下文长度或缩减 Skill registry。"
             )
         selected = client.complete(
             messages,
@@ -682,9 +692,409 @@ def _自动选择references_api(client: _远程API客户端, skill: dict, task: 
     raise ValueError(f"Reference路由失败：两次请求均未返回有效 reference，最后输出：{preview}。") from last_error
 
 
+def _自动选择礼物references_api(
+    client: _远程API客户端,
+    skill: dict,
+    task: str,
+    n_ctx: int,
+    images: list[tuple[object, int]],
+) -> tuple[list[str], dict]:
+    prompt = (
+        "你是直播礼物 Skill 的 Reference 路由器。根据任务、参考图片和 Skill 工作流，"
+        "只选择最终生成确实需要读取的可选 registry 条目。必读价效、H3 和情感规则由后端加载，不要为它们选择条目。"
+        "只输出严格 JSON 字符串数组，元素必须是下方 registry ID；可以输出 []。不要解释，不要使用 Markdown。\n\n"
+        f"当前任务：\n{task}\n\nRegistry 摘要：\n{_礼物registry摘要(skill)}\n\n"
+        f"Skill 工作流：\n{读取skill正文(skill)}"
+    )
+    # GPT-5 类推理模型会把隐藏推理计入输出预算；1024 可能在生成 JSON 前就耗尽。
+    max_tokens = 4096
+    budget_messages = [{"role": "user", "content": prompt, "images": [{}] * len(images)}]
+    required_tokens = _估算远程消息token数(budget_messages, image_count=len(images))
+    _output_reserve, prompt_budget = _计算上下文预算(max_tokens, n_ctx)
+    report = {
+        "requested": True,
+        "image_count": len(images),
+        "image_max_edge": 512 if images else None,
+        "router_input_tokens_estimate": required_tokens,
+    }
+    if required_tokens > prompt_budget:
+        raise ValueError(
+            f"Reference 路由输入估算需要 {required_tokens} tokens，超过可用上下文 {prompt_budget}。"
+        )
+    messages = [{"role": "user", "content": _构建用户内容(prompt, images, 512)}]
+    try:
+        selected = client.complete(
+            messages,
+            max_tokens,
+            stage="Reference路由",
+            allow_truncated=True,
+        )
+        if not str(selected or "").strip():
+            raise ValueError(
+                "Reference 路由返回空文本；服务很可能在输出 JSON 前耗尽了 4096 token 路由预算。"
+                "请确认业务模型允许至少 4096 个输出 token，或改用能够稳定返回短 JSON 的模型。"
+            )
+        try:
+            selected_ids = _解析礼物registry选择(selected, skill)
+        except ValueError as exc:
+            preview = _脱敏文本(selected, client.api_key)[:300] or "<空输出>"
+            raise ValueError(f"Reference 路由返回格式无效：{exc} 原始输出预览：{preview}") from exc
+        report["router_selected"] = selected_ids
+        return selected_ids, report
+    except mm.InterruptProcessingException:
+        raise
+    except (ValueError, RuntimeError):
+        raise
+
+
+def _自动选择图像礼物references_api(
+    client: _远程API客户端,
+    skill: dict,
+    task: str,
+    reference_note: str,
+    n_ctx: int,
+    images: list[tuple[object, int]],
+) -> tuple[list[str], dict]:
+    prompt = (
+        "你是直播礼物图像提示词 Skill 的 Reference 路由器。根据任务、参考图用途说明、参考图片和 Skill 工作流，"
+        "只选择最终图像提示词确实需要读取的可选 registry 条目。价效、配色、提示词 pattern、情感和输出审计规则由后端必读，"
+        "不要为它们选择条目。只有出现可见人物、服装、配饰、鞋履或人物妆造参考时才选择 wardrobe 条目。"
+        "只输出严格 JSON 字符串数组，元素必须是下方 registry ID；可以输出 []。不要解释，不要使用 Markdown。\n\n"
+        f"当前任务：\n{task}\n\n参考图用途说明：\n{reference_note or '未指定，由模型按图片内容判断。'}\n\n"
+        f"Registry 摘要：\n{_礼物registry摘要(skill)}\n\nSkill 工作流：\n{读取skill正文(skill)}"
+    )
+    # GPT-5 类推理模型会把隐藏推理计入输出预算；1024 可能在生成 JSON 前就耗尽。
+    max_tokens = 4096
+    budget_messages = [{"role": "user", "content": prompt, "images": [{}] * len(images)}]
+    required_tokens = _估算远程消息token数(budget_messages, image_count=len(images))
+    _output_reserve, prompt_budget = _计算上下文预算(max_tokens, n_ctx)
+    report = {
+        "requested": True,
+        "image_count": len(images),
+        "image_max_edge": 512 if images else None,
+        "router_input_tokens_estimate": required_tokens,
+    }
+    if required_tokens > prompt_budget:
+        raise ValueError(f"Reference 路由输入估算需要 {required_tokens} tokens，超过可用上下文 {prompt_budget}。")
+    messages = [{"role": "user", "content": _构建用户内容(prompt, images, 512)}]
+    selected = client.complete(messages, max_tokens, stage="Reference路由", allow_truncated=True)
+    if not str(selected or "").strip():
+        raise ValueError(
+            "Reference 路由返回空文本；服务很可能在输出 JSON 前耗尽了 4096 token 路由预算。"
+            "请确认业务模型允许至少 4096 个输出 token，或改用能够稳定返回短 JSON 的模型。"
+        )
+    try:
+        selected_ids = _解析礼物registry选择(selected, skill)
+    except ValueError as exc:
+        preview = _脱敏文本(selected, client.api_key)[:300] or "<空输出>"
+        raise ValueError(f"Reference 路由返回格式无效：{exc} 原始输出预览：{preview}") from exc
+    report["router_selected"] = selected_ids
+    return selected_ids, report
+
+
+def _检查参考图说明(reference_note: str, image_count: int) -> None:
+    indexes = {
+        int(value)
+        for value in re.findall(r"(?:参考图|图片|picture|image)\s*#?\s*(\d+)", reference_note or "", re.IGNORECASE)
+    }
+    invalid = sorted(index for index in indexes if index < 1 or index > image_count)
+    if invalid:
+        raise ValueError(
+            "参考图说明引用了未连接的图片："
+            + "、".join(f"参考图{index}" for index in invalid)
+            + f"；当前共连接 {image_count} 张图片。"
+        )
+
+
+def _解析JSON对象(text: str) -> dict:
+    cleaned = re.sub(r"<think>[\s\S]*?</think>", "", str(text or ""), flags=re.IGNORECASE).strip()
+    lines = cleaned.splitlines()
+    if len(lines) >= 2 and re.fullmatch(r"```(?:json|text)?", lines[0].strip(), re.IGNORECASE) and lines[-1].strip() == "```":
+        cleaned = "\n".join(lines[1:-1]).strip()
+    try:
+        value = json.loads(cleaned)
+        if isinstance(value, dict):
+            return value
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", cleaned):
+        try:
+            value, _end = decoder.raw_decode(cleaned[match.start() :])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise ValueError("最终生成必须返回 JSON 对象。")
+
+
+def _校验低价图像构图(zh_prompt: str, en_prompt: str, price: int) -> list[str]:
+    errors = []
+    if "主体位于画面中央" not in zh_prompt:
+        errors.append("低价中文提示词必须明确写出“主体位于画面中央”")
+    en_lower = en_prompt.lower()
+    if "main subject centered in the frame" not in en_lower:
+        errors.append("低价英文提示词必须明确写出“main subject centered in the frame”")
+
+    combined = f"{zh_prompt}\n{en_prompt}"
+    combined_lower = combined.lower()
+    if price <= 499:
+        if "画面为纯黑色背景" not in zh_prompt:
+            errors.append("99–499 中文提示词必须明确写出“画面为纯黑色背景”")
+        if "pure black background" not in en_lower:
+            errors.append("99–499 英文提示词必须明确写出“pure black background”")
+        forbidden_environment_patterns = (
+            r"环境(?:为|是)",
+            r"\benvironment\s+(?:is|of|with)\b",
+            r"(?:建筑|远景|地平线|天气|环境光源?|场景空间)",
+            r"(?:位于|坐落于|背景(?:中|里|为|是)?|场景(?:中|里|为|是)?).{0,16}(?:花园|舞台|街道)",
+            r"(?:花园|舞台|街道).{0,8}(?:背景|环境|场景)",
+            r"\b(?:architecture|distant view|horizon|weather|environmental light|scene space)\b",
+            r"\b(?:garden|stage|street)\b.{0,24}\b(?:background|environment|scene)\b",
+            r"\b(?:background|environment|scene)\b.{0,24}\b(?:garden|stage|street)\b",
+        )
+        if any(re.search(pattern, combined, flags=re.IGNORECASE) for pattern in forbidden_environment_patterns):
+            errors.append("99–499 提示词不得使用环境开场或描述建筑、远景、地平线、天气、场景空间及环境光源")
+
+        forbidden_backgrounds = (
+            "纯白色背景",
+            "纯白背景",
+            "蓝色背景",
+            "绿色背景",
+            "红色背景",
+            "彩色背景",
+            "渐变背景",
+            "透明背景",
+        )
+        if any(term in combined for term in forbidden_backgrounds) or re.search(
+            r"\b(?:white|blue|green|red|colored|colourful|gradient|transparent)\s+background\b",
+            combined_lower,
+        ):
+            errors.append("99–499 提示词不得指定非纯黑背景")
+    else:
+        complex_background_patterns = (
+            r"(?:宏大|庞大|广阔|复杂|多层)(?:背景|环境|场景|建筑|舞台|空间|城市)|(?:城市全景|深远地平线|多个地点|复杂建筑群|拥挤群像|多层环境叙事)",
+            r"\b(?:vast|grand|monumental|complex|elaborate|multi-layered)\s+(?:background|environment|scene|architecture|stage|space|cityscape)\b",
+            r"\b(?:panoramic cityscape|deep horizon|multiple locations|crowded background group|multilayer environmental storytelling)\b",
+        )
+        if any(re.search(pattern, combined, flags=re.IGNORECASE) for pattern in complex_background_patterns):
+            errors.append("500–999 只允许紧凑简单背景，不得描述复杂建筑、宏大空间、城市全景或多层环境叙事")
+
+    if re.search(r"偏左|偏右|画面(?:左|右)侧|主体(?:位于|放在)一侧|off[- ]center|(?:left|right) side of the frame", combined, re.IGNORECASE):
+        errors.append("低价主体或主体组合必须居中，不得使用偏置构图")
+    return errors
+
+
+def _校验高价人物构图(zh_prompt: str, en_prompt: str) -> list[str]:
+    errors = []
+    combined = f"{zh_prompt}\n{en_prompt}"
+    human_terms_zh = r"人物|人类|角色|女性|男性|女人|男人|少女|少年|女孩|男孩|公主|王子|女王|皇后|国王|帝王|主播|演员|舞者|歌手|新娘|新郎|女神|仙女|骑士|武士|法师"
+    human_terms_en = r"\b(?:person|people|human|character|woman|women|man|men|girl|boy|princess|prince|queen|king|empress|emperor|host|actor|actress|dancer|singer|bride|groom|goddess|fairy|knight|warrior|mage)\b"
+    has_person = bool(
+        "w+girl" in combined
+        or "w+boy" in combined
+        or re.search(human_terms_zh, combined)
+        or re.search(human_terms_en, combined, re.IGNORECASE)
+    )
+    if not has_person:
+        return errors
+
+    if "w+girl" not in combined and "w+boy" not in combined:
+        errors.append("高价提示词出现可见人物时必须包含对应的 w+girl 或 w+boy 触发词")
+
+    zh_crops = (
+        "胸像近景",
+        "胸部以上近景",
+        "半身近景",
+        "上半身近景",
+        "腰部以上近景",
+        "大腿以上近景",
+        "膝上近景",
+        "膝盖以上近景",
+        "小腿以上近景",
+    )
+    en_crops = (
+        "bust close-up",
+        "chest-up close-up",
+        "half-body close-up",
+        "upper-body close-up",
+        "waist-up close-up",
+        "thigh-up close-up",
+        "knee-up close-up",
+        "calf-up close-up",
+    )
+    if not any(term in zh_prompt for term in zh_crops):
+        errors.append("高价中文人物提示词必须明确胸像至小腿以上范围内的近景裁切")
+    en_lower = en_prompt.lower()
+    if not any(term in en_lower for term in en_crops):
+        errors.append("高价英文人物提示词必须明确 bust 至 calf-up 范围内的 close-up 裁切")
+
+    zh_prominence = ("人物占据画面主要区域", "每个可见人物都占据画面主要区域", "人物主体占据画面主要区域")
+    en_prominence = ("occupies most of the frame", "occupy most of the frame", "fills most of the frame", "fill most of the frame")
+    if not any(term in zh_prompt for term in zh_prominence):
+        errors.append("高价中文人物提示词必须明确人物占据画面主要区域")
+    if not any(term in en_lower for term in en_prominence):
+        errors.append("高价英文人物提示词必须明确人物 occupies most of the frame")
+
+    if not any(term in zh_prompt for term in ("脚部不入镜", "脚部不可见", "脚部位于画面外")):
+        errors.append("高价中文人物提示词必须明确脚部不入镜")
+    if "feet out of frame" not in en_lower:
+        errors.append("高价英文人物提示词必须明确 feet out of frame")
+
+    forbidden_patterns = (
+        r"人物全身图|完整全身|全身入镜|从头到脚|脚部入镜|脚部可见|鞋履可见|远景人物|背景人物|人物(?:很小|较小)|小比例人物",
+        r"\bfull[- ]body\b|\bhead[- ]to[- ]toe\b|\bfeet visible\b|\bvisible feet\b|\ba[- ]pose\b",
+        r"\b(?:long|wide) shot\b|\b(?:small|tiny|distant|background) figure\b|\bsmall in the frame\b",
+    )
+    if any(re.search(pattern, combined, flags=re.IGNORECASE) for pattern in forbidden_patterns):
+        errors.append("高价人物提示词不得出现全身、脚部可见、A-pose、远景或小比例人物表达")
+    return errors
+
+
+def _校验图像提示词结果(
+    text: str,
+    image_count: int,
+    skill_id: str = "",
+    task: str = "",
+) -> tuple[dict, list[str]]:
+    errors = []
+    try:
+        value = _解析JSON对象(text)
+    except ValueError as exc:
+        return {}, [str(exc)]
+
+    analysis = value.get("reference_analysis")
+    if not isinstance(analysis, list):
+        errors.append("reference_analysis 必须是数组")
+        analysis = []
+    if image_count == 0 and analysis:
+        errors.append("没有连接参考图时 reference_analysis 必须为空数组")
+    if image_count > 0:
+        indexes = []
+        required_fields = ("composition", "lighting", "color", "time_atmosphere", "scene", "props", "people")
+        for position, item in enumerate(analysis, start=1):
+            if not isinstance(item, dict):
+                errors.append(f"reference_analysis 第 {position} 项必须是对象")
+                continue
+            try:
+                index = int(item.get("image_index"))
+            except (TypeError, ValueError):
+                index = -1
+            indexes.append(index)
+            if not isinstance(item.get("declared_role", ""), str):
+                errors.append(f"参考图 {index if index > 0 else position} 的 declared_role 必须是字符串")
+            for field in required_fields:
+                if not isinstance(item.get(field), str) or not str(item.get(field)).strip():
+                    errors.append(f"参考图 {index if index > 0 else position} 缺少 {field} 分析")
+        expected = list(range(1, image_count + 1))
+        if sorted(indexes) != expected:
+            errors.append(f"reference_analysis 必须且只能覆盖参考图 {expected}，当前为 {indexes}")
+
+    fusion_strategy = value.get("fusion_strategy")
+    if not isinstance(fusion_strategy, str):
+        errors.append("fusion_strategy 必须是字符串")
+    elif image_count > 1 and not fusion_strategy.strip():
+        errors.append("多图输入时 fusion_strategy 不能为空")
+
+    prompts = {}
+    for field, label in (("zh_prompt", "中文提示词"), ("en_prompt", "英文提示词")):
+        prompt = value.get(field)
+        if not isinstance(prompt, str) or not prompt.strip():
+            errors.append(f"{label}不能为空")
+            prompts[field] = ""
+            continue
+        prompt = prompt.strip()
+        if "\n" in prompt or prompt.startswith(("#", "```")) or prompt.endswith("```"):
+            errors.append(f"{label}必须是无标题、无代码围栏的单段文本")
+        prompts[field] = prompt
+
+    trigger_names = ("w+style", "w+girl", "w+boy")
+    zh_counts = {name: prompts.get("zh_prompt", "").count(name) for name in trigger_names}
+    en_counts = {name: prompts.get("en_prompt", "").count(name) for name in trigger_names}
+    if not any(zh_counts.values()):
+        errors.append("中文提示词缺少 W+ 触发词")
+    if zh_counts != en_counts:
+        errors.append(f"中英文 W+ 触发词数量不一致：中文 {zh_counts}，英文 {en_counts}")
+
+    if skill_id == 低价直播礼物图像SKILL_ID:
+        errors.extend(
+            _校验低价图像构图(
+                prompts.get("zh_prompt", ""),
+                prompts.get("en_prompt", ""),
+                _解析礼物价格(task),
+            )
+        )
+    elif skill_id == 直播礼物图像SKILL_ID:
+        errors.extend(_校验高价人物构图(prompts.get("zh_prompt", ""), prompts.get("en_prompt", "")))
+
+    value["reference_analysis"] = analysis
+    value["fusion_strategy"] = fusion_strategy if isinstance(fusion_strategy, str) else ""
+    value.update(prompts)
+    return value, errors
+
+
+def _格式化图像提示词报告(report: dict) -> str:
+    return "图像提示词报告：\n" + json.dumps(report, ensure_ascii=False, indent=2)
+
+
 def _API推理(client: _远程API客户端, messages: list[dict], settings: dict, stage: str = "最终生成") -> str:
     text = client.complete(messages, int(settings["最大生成token"]), settings=settings, stage=stage)
     return _清理最终文本(text.lstrip().removeprefix(": ").strip())
+
+
+def _格式化H3校验报告(report: dict) -> str:
+    return "H3校验报告：\n" + json.dumps(report, ensure_ascii=False, indent=2)
+
+
+def _格式化Skill上下文报告(report: dict) -> str:
+    return "Skill上下文报告：\n" + json.dumps(report, ensure_ascii=False, indent=2)
+
+
+def _准备低价背景色任务(skill_id: str, task: str, raw_color: str) -> tuple[str, dict]:
+    input_color = str(raw_color or "").strip()
+    price = _解析礼物价格(task)
+    cleaned_task = re.sub(
+        r"\s*\[APIAGENT_GIFT_BG_COLOR=[^\]\r\n]*\]\s*",
+        "\n",
+        task,
+        flags=re.IGNORECASE,
+    ).strip()
+    report = {
+        "input": input_color,
+        "normalized": None,
+        "defaulted": False,
+        "applied": False,
+        "reason": "",
+    }
+    if skill_id != 低价直播礼物SKILL_ID:
+        report["reason"] = "当前不是低价直播礼物视频 Skill，背景色输入未应用。" if input_color else "当前 Skill 不使用低价固定背景色。"
+        return cleaned_task, report
+
+    if not 99 <= price <= 999:
+        report["reason"] = f"任务价格 {price} 不在低价 Skill 的 99–999 范围。"
+        return cleaned_task, report
+
+    if price <= 499 and not input_color:
+        normalized = "#00FF00"
+        report["defaulted"] = True
+        report["reason"] = "99–499 未填写色值，使用默认低价抠像绿 #00FF00。"
+    elif not input_color:
+        report["reason"] = "500–999 未填写色值，保留紧凑场景或普通纯色背景策略。"
+        return cleaned_task, report
+    elif not re.fullmatch(r"#[0-9A-Fa-f]{6}", input_color):
+        raise ValueError("低价固定背景色必须是六位标准 HEX 色值，例如 #00FF00。")
+    else:
+        normalized = input_color.upper()
+        report["reason"] = "使用用户提供的低价固定背景色。"
+
+    report["normalized"] = normalized
+    report["applied"] = True
+    effective_task = (
+        f"{cleaned_task}\n\n[APIAGENT_GIFT_BG_COLOR={normalized}]\n"
+        f"低价固定背景色：{normalized}。该色值是背景的唯一权威值；背景必须覆盖全画面，"
+        "从首帧到末帧保持相同色相、亮度、纹理和覆盖范围，前景效果不得重染背景。"
+    )
+    return effective_task, report
 
 
 class APIAgentAPI配置:
@@ -788,13 +1198,14 @@ class APIAgentSkillAPI单次执行:
                 "API配置": ("APIAGENT_API_CONFIG",),
                 "skill加载器": ("APIAGENT_SKILL",),
                 "任务": ("STRING", {"default": "", "multiline": True}),
-                "参考资料策略": (["按任务自动选择", "加载全部", "不加载"], {"default": "按任务自动选择"}),
-                "缺失信息策略": (["自动采用合理默认值", "信息不足时报错"], {"default": "自动采用合理默认值"}),
                 "H3格式自动校验": (
                     "BOOLEAN",
-                    {"default": True, "tooltip": "关闭后跳过格式校验和自动修复；Skill 与必需写作规范仍会正常加载。"},
+                    {"default": True, "tooltip": "生成后校验 H3 格式；失败时按自动修复次数再次调用 API，并把校验报告写入 API运行信息。关闭后跳过校验和修复。"},
                 ),
-                "自动修复次数": ("INT", {"default": 1, "min": 0, "max": 2, "step": 1}),
+                "自动修复次数": (
+                    "INT",
+                    {"default": 1, "min": 0, "max": 2, "step": 1, "tooltip": "H3 校验失败后最多追加调用 API 的次数。"},
+                ),
                 "最大生成token": (
                     "INT",
                     {
@@ -807,6 +1218,13 @@ class APIAgentSkillAPI单次执行:
                 ),
             },
             "optional": {
+                "低价固定背景色": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "tooltip": "99–499 留空时使用 #00FF00；500–999 留空时不启用固定背景。非空值必须为 #RRGGBB。",
+                    },
+                ),
                 "图片": ("IMAGE", {"tooltip": "Picture 1；如果输入为批次，会按批次顺序继续展开。"}),
                 "图片2": ("IMAGE", {"tooltip": "上一输入展开后继续编号。"}),
                 "图片3": ("IMAGE", {"tooltip": "上一输入展开后继续编号。"}),
@@ -833,11 +1251,10 @@ class APIAgentSkillAPI单次执行:
         API配置,
         skill加载器,
         任务,
-        参考资料策略,
-        缺失信息策略,
         H3格式自动校验,
         自动修复次数,
         最大生成token=8192,
+        低价固定背景色="",
         图片=None,
         图片2=None,
         图片3=None,
@@ -857,29 +1274,63 @@ class APIAgentSkillAPI单次执行:
         settings["最大生成token"] = int(最大生成token)
         n_ctx = int(config["上下文长度"])
         skill = _选择skill_api(client, skill加载器, task)
+        if skill["id"] in 直播礼物图像SKILL_IDS:
+            raise ValueError("当前连接的是图像提示词 Skill，请改用 APIAgent 图像Skill单次执行节点。")
+        task, background_color_report = _准备低价背景色任务(skill["id"], task, 低价固定背景色)
 
         images = _收集图片(图片, 图片2, 图片3, 图片4, 图片5, 图片6, 图片7, 图片8, 图片9)
         image_count = len(images)
         h3_mode = _解析h3模式(task) if skill["id"].startswith("h3-") else ""
         h3_duration = _解析h3时长(task) if h3_mode else 0.0
-
-        if skill["id"] in 直播礼物SKILL_IDS and 参考资料策略 != "不加载":
-            reference_paths = _礼物h3_references(skill, task)
-        elif 参考资料策略 == "加载全部":
-            reference_paths = list(skill.get("references") or [])
-        elif 参考资料策略 == "不加载":
-            reference_paths = []
-        elif skill["id"] == "h3-prompt-writing":
-            reference_paths = _h3_reference(skill, task)
-        else:
-            reference_paths = _自动选择references_api(client, skill, task, n_ctx)
-
         if h3_mode:
             _检查h3图片数量(h3_mode, image_count)
         if image_count and not config["支持图片"]:
             raise RuntimeError("当前 API配置已关闭图片支持，请启用后重试，或使用纯文本任务。")
+        validation_report = {
+            "enabled": bool(H3格式自动校验),
+            "executed": False,
+            "valid": None,
+            "mode": h3_mode,
+            "duration": round(h3_duration, 2) if h3_mode else None,
+            "image_count": image_count,
+            "repair_attempts": 0,
+            "initial_errors": [],
+            "final_errors": [],
+            "warnings": [],
+        }
+        if not h3_mode:
+            validation_report["reason"] = "当前任务未识别为 H3 模式"
+        elif not bool(H3格式自动校验):
+            validation_report["reason"] = "H3格式自动校验已关闭"
 
-        system_text = _构建系统提示词(skill, reference_paths, 缺失信息策略, settings["系统提示词"])
+        context_report = {
+            "policy": "必读规则 + 自动选择 Reference",
+            "skill_id": skill["id"],
+            "background_color_input": background_color_report,
+        }
+        if skill["id"] in 直播礼物SKILL_IDS:
+            selected_ids, route_report = _自动选择礼物references_api(client, skill, task, n_ctx, images)
+            reference_paths, gift_context = _构建礼物资源(skill, task, selected_ids)
+            context_report.update(gift_context)
+            context_report["route"] = route_report
+        elif skill["id"] == "h3-prompt-writing":
+            reference_paths = _h3_reference(skill, task)
+        else:
+            reference_paths = _自动选择references_api(client, skill, task, n_ctx)
+        if skill["id"] not in 直播礼物SKILL_IDS:
+            context_report.update(
+                {
+                    "loaded_references": [
+                        item.get("label") if isinstance(item, dict) else str(item) for item in reference_paths
+                    ],
+                    "injected_characters": sum(
+                        len(str(item.get("content") or "")) if isinstance(item, dict) else len(str(item))
+                        for item in reference_paths
+                    ),
+                }
+            )
+
+        system_text = _构建系统提示词(skill, reference_paths, settings["系统提示词"])
         budget_messages = [
             {"role": "system", "content": system_text},
             {"role": "user", "content": task, "images": [{}] * image_count},
@@ -904,14 +1355,44 @@ class APIAgentSkillAPI单次执行:
             result_text, external_notice = _拆分礼物外部提示(result_text, h3_mode)
             if external_notice:
                 print(f"[APIAgent API] 直播礼物外部提示：{external_notice}")
+            result_text = 规范化低价h3硬约束(result_text, h3_mode, skill["id"], task)
 
         if h3_mode and bool(H3格式自动校验):
-            result_text, errors, warnings = 校验h3提示词(result_text, h3_mode, h3_duration, image_count, h3_mode == "Ref2VA")
+            result_text, errors, warnings = 校验h3提示词(
+                result_text,
+                h3_mode,
+                h3_duration,
+                image_count,
+                h3_mode == "Ref2VA",
+                skill["id"],
+                task,
+            )
+            validation_report["executed"] = True
+            validation_report["initial_errors"] = list(errors)
             attempts = 0
             while errors and attempts < int(自动修复次数):
+                low_tier_fix = ""
+                if skill["id"] == 低价直播礼物SKILL_ID:
+                    color_match = re.search(
+                        r"\[APIAGENT_GIFT_BG_COLOR=(#[0-9A-Fa-f]{6})\]",
+                        task,
+                        re.IGNORECASE,
+                    )
+                    color = color_match.group(1).upper() if color_match else ""
+                    low_tier_fix = (
+                        "\n\n低价硬格式：overall_soundscape 和 non_diegetic_music 的字段正文必须分别严格为 N/A，"
+                        "不得追加解释。"
+                    )
+                    if color:
+                        low_tier_fix += (
+                            "在主描述字段中原样包含以下英文约束：\n"
+                            f"The exact {color} background is a uniform solid-color, texture-free field that fills the entire frame. "
+                            "Its hue, luminance, texture, and coverage remain unchanged from the first frame through the final frame."
+                        )
                 repair_task = (
                     f"{task}\n\n以下是上一次生成的 H3 提示词：\n{result_text}\n\n"
                     "格式校验发现以下错误：\n- " + "\n- ".join(errors)
+                    + low_tier_fix
                     + "\n\n请依据当前 Skill 和 reference 修正全部错误，只返回完整的修正版最终提示词。"
                 )
                 repair_budget_messages = [
@@ -932,14 +1413,242 @@ class APIAgentSkillAPI单次执行:
                     result_text, external_notice = _拆分礼物外部提示(result_text, h3_mode)
                     if external_notice:
                         print(f"[APIAgent API] 直播礼物外部提示：{external_notice}")
+                    result_text = 规范化低价h3硬约束(result_text, h3_mode, skill["id"], task)
                 result_text, errors, warnings = 校验h3提示词(
-                    result_text, h3_mode, h3_duration, image_count, h3_mode == "Ref2VA"
+                    result_text,
+                    h3_mode,
+                    h3_duration,
+                    image_count,
+                    h3_mode == "Ref2VA",
+                    skill["id"],
+                    task,
                 )
                 attempts += 1
+            validation_report["repair_attempts"] = attempts
+            validation_report["final_errors"] = list(errors)
+            validation_report["warnings"] = list(warnings)
+            validation_report["valid"] = not errors
             if errors:
-                raise ValueError("H3 提示词校验失败：" + "；".join(errors))
+                raise ValueError(
+                    f"H3 提示词校验失败（自动修复 {attempts} 次后仍未通过）：" + "；".join(errors)
+                )
             for warning in warnings:
                 print(f"[APIAgent API] H3 校验提示：{warning}")
 
         _中断检查()
-        return result_text, client.summary()
+        return (
+            result_text,
+            client.summary()
+            + "\n\n"
+            + _格式化Skill上下文报告(context_report)
+            + "\n\n"
+            + _格式化H3校验报告(validation_report),
+        )
+
+
+class APIAgent图像SkillAPI单次执行:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "API配置": ("APIAGENT_API_CONFIG",),
+                "skill加载器": ("APIAGENT_SKILL",),
+                "任务": ("STRING", {"default": "", "multiline": True}),
+                "最大生成token": (
+                    "INT",
+                    {
+                        "default": 8192,
+                        "min": 512,
+                        "max": 32768,
+                        "step": 512,
+                        "tooltip": "结构化参考图分析和中英文提示词的总输出预算。",
+                    },
+                ),
+            },
+            "optional": {
+                "参考图说明": (
+                    "STRING",
+                    {
+                        "default": "",
+                        "multiline": True,
+                        "tooltip": "可指定每张图的用途，例如：参考图1用于角色妆造，参考图2用于场景。留空时由模型判断。",
+                    },
+                ),
+                "图片": ("IMAGE", {"tooltip": "参考图1；图片只作为主体、妆造、场景、材质、风格或构图参考。"}),
+                "图片2": ("IMAGE", {"tooltip": "参考图2。"}),
+                "图片3": ("IMAGE", {"tooltip": "参考图3。"}),
+                "图片4": ("IMAGE", {"tooltip": "参考图4。"}),
+                "图片5": ("IMAGE", {"tooltip": "参考图5。"}),
+                "图片6": ("IMAGE", {"tooltip": "参考图6。"}),
+                "图片7": ("IMAGE", {"tooltip": "参考图7。"}),
+                "图片8": ("IMAGE", {"tooltip": "参考图8。"}),
+                "图片9": ("IMAGE", {"tooltip": "参考图9；总数最多 9 张。"}),
+            },
+        }
+
+    RETURN_TYPES = ("STRING", "STRING", "STRING")
+    RETURN_NAMES = ("中文提示词", "英文提示词", "API运行信息")
+    FUNCTION = "run"
+    CATEGORY = "APIAgent/Skill流水线"
+
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("nan")
+
+    def run(
+        self,
+        API配置,
+        skill加载器,
+        任务,
+        最大生成token=8192,
+        参考图说明="",
+        图片=None,
+        图片2=None,
+        图片3=None,
+        图片4=None,
+        图片5=None,
+        图片6=None,
+        图片7=None,
+        图片8=None,
+        图片9=None,
+    ):
+        task = str(任务 or "").strip()
+        if not task:
+            raise ValueError("图像 Skill API 单次执行的任务不能为空。")
+        reference_note = str(参考图说明 or "").strip()
+        images = _收集图片(图片, 图片2, 图片3, 图片4, 图片5, 图片6, 图片7, 图片8, 图片9)
+        image_count = len(images)
+        _检查参考图说明(reference_note, image_count)
+
+        client = _远程API客户端(API配置)
+        config = client.config
+        if image_count and not config["支持图片"]:
+            raise RuntimeError("当前 API配置已关闭图片支持，请启用后重试，或移除参考图片。")
+        settings = _默认单次设置()
+        settings["最大生成token"] = int(最大生成token)
+        n_ctx = int(config["上下文长度"])
+        selection_task = task + "\n\n当前执行节点要求选择 output_kind=bilingual_image_prompt 的直播礼物图像提示词 Skill。"
+        skill = _选择skill_api(client, skill加载器, selection_task)
+        if skill["id"] not in 直播礼物图像SKILL_IDS or skill.get("manifest", {}).get("output_kind") != "bilingual_image_prompt":
+            raise ValueError(
+                f"图像 Skill 单次执行节点不能执行 {skill['id']}；请连接构建器的图像Skill路由或选择图像提示词 Skill。"
+            )
+
+        selected_ids, route_report = _自动选择图像礼物references_api(
+            client,
+            skill,
+            task,
+            reference_note,
+            n_ctx,
+            images,
+        )
+        reference_paths, context_report = _构建图像礼物资源(skill, task, selected_ids)
+        context_report.update(
+            {
+                "policy": "必读图像规则 + 自动选择 Reference",
+                "skill_id": skill["id"],
+                "reference_note": reference_note,
+                "route": route_report,
+            }
+        )
+        system_text = _构建系统提示词(skill, reference_paths, settings["系统提示词"])
+        if skill["id"] == 低价直播礼物图像SKILL_ID:
+            gift_price = _解析礼物价格(task)
+            if gift_price <= 499:
+                profile_instruction = (
+                    "当前为 99–499 低价图像 Skill：最终中英文提示词只能描述居中的主体或主体组合，使用连续、均匀、无纹理的纯黑背景，"
+                    "不得保留参考图或任务中的环境。中文必须逐字包含‘主体位于画面中央’和‘画面为纯黑色背景’；"
+                    "英文必须逐字包含‘main subject centered in the frame’和‘pure black background’。"
+                    "不得使用‘环境为/环境是/environment is’，不得描述建筑、远景、地平线、天气、场景空间或环境光源。"
+                )
+            else:
+                profile_instruction = (
+                    "当前为 500–999 低价图像 Skill：最终中英文提示词必须保持主体或主体组合居中，"
+                    "中文必须逐字包含‘主体位于画面中央’，英文必须逐字包含‘main subject centered in the frame’。"
+                    "不强制纯黑背景；可以继续使用黑底，也可以保留或构建一处服务主题的紧凑简单背景。"
+                    "背景只能提供必要承托和氛围，不得扩展成复杂建筑群、宏大舞台、城市全景、深远地平线、多个地点、"
+                    "拥挤群像或多层环境叙事，且不得让主体成为背景小元素。"
+                )
+        else:
+            profile_instruction = (
+                "当前为高价图像 Skill：如有可见人物，只允许胸像、半身、腰部以上、大腿以上、膝上或小腿以上近景，"
+                "小腿是最大可见范围，脚部必须在画面外，每个可见人物都必须占据画面主要区域。"
+                "即使任务或参考图要求全身，也必须改为小腿以上或更近裁切；禁止全身、从头到脚、A-pose、远景、宽景和背景小人物。"
+                "中文必须明确合法近景裁切、‘人物占据画面主要区域’和‘脚部不入镜’；英文必须明确对应 close-up、"
+                "‘occupies most of the frame’和‘feet out of frame’。无人画面不添加人物。"
+            )
+        generation_task = (
+            f"{task}\n\n参考图用途说明：\n{reference_note or '未指定，由你根据每张参考图内容判断。'}\n\n"
+            f"{profile_instruction}\n\n"
+            "请先逐张完成参考图结构化分析，再融合成一组直播礼物图像提示词。图片只作软参考，不得解释为精确首帧、尾帧或逐像素复刻。"
+            "只返回一个 JSON 对象，不要 Markdown、代码围栏或额外文字。JSON 必须使用以下结构：\n"
+            '{"reference_analysis":[{"image_index":1,"declared_role":"","composition":"","lighting":"",'
+            '"color":"","time_atmosphere":"","scene":"","props":"","people":""}],'
+            '"fusion_strategy":"","zh_prompt":"","en_prompt":""}\n'
+            f"当前共连接 {image_count} 张参考图。没有图片时 reference_analysis 必须为 []；"
+            "有图片时必须按 1 到图片总数逐张分析且每个分析字段非空。中文和英文提示词都必须是单段纯文本，"
+            "英文是中文设计的忠实翻译，并保持 w+style、w+girl、w+boy 触发词数量一致。"
+        )
+        budget_messages = [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": generation_task, "images": [{}] * image_count},
+        ]
+        output_reserve, prompt_budget = _计算上下文预算(int(settings["最大生成token"]), n_ctx)
+        required_tokens = _估算远程消息token数(budget_messages, image_count=image_count)
+        if required_tokens > prompt_budget:
+            raise ValueError(
+                f"当前图像 Skill、规则、Reference、任务和图片估算需要 {required_tokens} tokens，"
+                f"超过可用输入上下文 {prompt_budget}。请提高 API配置中的上下文长度。"
+            )
+        settings["最大生成token"] = output_reserve
+        messages = [
+            {"role": "system", "content": system_text},
+            {"role": "user", "content": _构建用户内容(generation_task, images, int(settings["最大边长"]))},
+        ]
+        print(f"[APIAgent API] 使用 {config['服务预设']} / {config['模型名称']}，输入约 {required_tokens} tokens。")
+        result_text = _API推理(client, messages, settings)
+        result, errors = _校验图像提示词结果(result_text, image_count, skill["id"], task)
+        initial_errors = list(errors)
+        repair_attempts = 0
+        if errors:
+            repair_task = (
+                f"{generation_task}\n\n上一次返回：\n{result_text}\n\n校验错误：\n- "
+                + "\n- ".join(errors)
+                + "\n请修复全部错误，只返回完整 JSON 对象。"
+            )
+            repair_budget_messages = [
+                {"role": "system", "content": system_text},
+                {"role": "user", "content": repair_task, "images": [{}] * image_count},
+            ]
+            repair_tokens = _估算远程消息token数(repair_budget_messages, image_count=image_count)
+            if repair_tokens > prompt_budget:
+                raise ValueError("图像提示词格式错误且修复请求超出当前 API上下文：" + "；".join(errors))
+            repair_messages = [
+                {"role": "system", "content": system_text},
+                {"role": "user", "content": _构建用户内容(repair_task, images, int(settings["最大边长"]))},
+            ]
+            result_text = _API推理(client, repair_messages, settings, stage="图像提示词修复")
+            result, errors = _校验图像提示词结果(result_text, image_count, skill["id"], task)
+            repair_attempts = 1
+        if errors:
+            raise ValueError("图像提示词校验失败（自动修复 1 次后仍未通过）：" + "；".join(errors))
+
+        prompt_report = {
+            "valid": True,
+            "image_count": image_count,
+            "reference_analysis": result["reference_analysis"],
+            "fusion_strategy": result["fusion_strategy"],
+            "repair_attempts": repair_attempts,
+            "initial_errors": initial_errors,
+            "final_errors": [],
+        }
+        _中断检查()
+        return (
+            result["zh_prompt"],
+            result["en_prompt"],
+            client.summary()
+            + "\n\n"
+            + _格式化Skill上下文报告(context_report)
+            + "\n\n"
+            + _格式化图像提示词报告(prompt_report),
+        )

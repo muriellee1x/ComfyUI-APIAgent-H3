@@ -1,43 +1,35 @@
 ---
 name: h3-low-coin-gift-director
-description: Write production-ready English H3 prompts for single-play Douyin live gifts priced from 0 through 999 coins. Use when GiftMaster receives a low-coin gift name, price, creative direction, aspect ratio, and optional reference images in T2VA, I2VA, FL2VA, L2VA, or Ref2VA mode and must enforce the low-tier duration, single-shot, silence, background, reference, and price-effect rules. Prices below 99 retain their input value but use the 99-coin minimum effect specification.
+description: Write production-ready MiniMax H3 prompts for single-play Douyin live gifts priced from 99 through 999 coins. Use for deterministic low-tier duration, one-shot, silence, aspect-ratio, exact solid-color background, H3-mode, emotion, and task-selected motion references.
 ---
 
 # H3 Low-Coin Gift Director
 
-Create one compact, readable live-gift animation. Preserve the user's named subject and requested action while keeping the result feasible for its price tier.
+Create one compact, readable, production-ready 99-999-coin live-gift animation.
 
-## Required workflow
+## Runtime workflow
 
-1. Read [references/price-profile.json](references/price-profile.json). Preserve the explicit input price, then calculate `effective_price = max(input_price, 99)` for tier selection. Use 499 coins only when no price is available.
-2. Read [references/format.md](references/format.md) and select the H3 mode from the assigned image role. Validate the image count before writing.
-3. Extract the gift name, price, aspect ratio, creative request, reference role, and hard constraints. Accept explicit prices from 0–999 and reject values outside that range. For 0–98, keep the original price visible in the task while applying the 99-coin minimum effect specification.
-4. Preserve reference identity, subject count, silhouette, core materials, recognizable colors, prop direction, and any exact endpoint assigned by the task.
-5. Design one continuous shot with one dominant motion idea. Use a short entrance, a readable presentation or action, and a clean exit or settling finish. When an exact first or last frame is assigned, the endpoint contract overrides a generic entrance or exit.
-6. Express motion through observable subject actions, object state changes, or a simple spatial trajectory. Keep secondary effects subordinate to the gift object.
-7. Write the final H3 prompt in the selected schema, then verify duration, aspect ratio, one-shot structure, silence, image labels, background behavior, and endpoint semantics.
+1. Parse the structured price, H3 mode, effective duration, emotion, aspect ratio, optional `[APIAGENT_GIFT_BG_COLOR=#RRGGBB]`, original user constraints, creative request, and image-role markers from the task.
+2. Apply the complete price rule and numeric profile loaded from `rules/price-effect-system.md` and `rules/price-effect-profile.json`. Reject prices outside 99-999.
+3. For 99-499, require the exact background marker; the executor supplies `#00FF00` when its input is empty. For 500-999, activate the exact background only when the marker exists; otherwise keep the compact-scene-or-solid-field allowance.
+4. When the marker exists, apply `rules/constant-solid-background.md` as a hard conditional rule. The color string is authoritative and consumes no picture label.
+5. Enforce the derived hard contract: 73 frames/about 3.04 seconds for 99-299; 90 frames/3.75 seconds for 300-999; one continuous shot; silent audio; one single-play entrance-display-exit chain; and only 1:1 or 4:3.
+6. Apply the complete shared H3 contract from `rules/h3-prompt-writing-base-en.txt`. In Ref2VA, also apply the complete full-reference contract from `rules/h3-prompt-writing-ref-en.txt`.
+7. Apply the loaded common emotion guidance and exactly one selected emotion section from `rules/emotion-rules.md`. Keep it subordinate to the user's theme and low-tier capacity.
+8. Use only the optional registry fragments supplied by the executor. Use the routed four-second motion fragments for directed rhythm, safe framing, component order, semantic climax, or final cooling; compress their logic for 99-299.
+9. Preserve explicit subject identity, structure, materials, endpoint roles, and core action. When explicit content exceeds the tier, emit the required Chinese warning but retain all hard delivery constraints.
+10. Return only the allowed Chinese warning followed by the complete English H3 prompt in the selected schema.
 
-## Non-negotiable rules
+## Precedence
 
-- Treat effective prices 99–299 as a 3-second product tier, implemented as 73 frames at 24 fps (about 3.04 seconds). This includes input prices 0–98 after applying the 99-coin calibration floor.
-- Treat 300–999 coins as a 4-second product tier, implemented as 90 frames at 24 fps (3.75 seconds).
-- Use exactly one `[Shot 1]`. Do not describe a cut, hidden cut, dissolve, or transition to another shot.
-- Use one play only. Do not invent combo, loop, accumulation, multiplier, or repeated-trigger behavior.
-- Use only `1:1` or `4:3`; default to `1:1`.
-- Keep `overall_soundscape: N/A` and `non_diegetic_music: N/A`. Do not add dialogue, lyrics, speakers, or audio references.
-- For effective prices 99–499, use one uniform solid-color background and state positively that it remains unchanged for the entire video. Do not prescribe a hue or color value. Let the upstream image choice remain authoritative when a solid background already exists.
-- For 500–999 coins, allow either a compact scene or a solid-color background. If solid color is used, keep it uniform and unchanged.
-- Maintain stable identity, geometry, material continuity, clean framing, and deliberate camera motion at every price. Price limits content capacity, not production quality.
+1. Exact H3 first-frame or last-frame contracts and the active exact background contract; endpoint images are expected to be pre-matched to the same color.
+2. Low-tier hard production rules, including the default `#00FF00` for 99-499 when no color is entered.
+3. Explicit user subject, identity, and core action.
+4. Selected emotion direction.
+5. Optional registry guidance and inferred decoration.
 
-## Price-effect conflict handling
+Conflicting user duration, shot count, audio, or aspect-ratio requests remain visible in the task but do not override the low-tier hard contract.
 
-When the user or reference explicitly contains imagery that is richer than the normal tier capacity, preserve it and emit one concise Chinese warning before the H3 prompt. Simplify only inferred decoration or secondary action. Never replace or downgrade explicit content.
+## Validation
 
-## Output
-
-Return at most:
-
-1. One Chinese price-effect warning when required.
-2. One complete English H3 prompt without a Markdown fence.
-
-Do not expose reasoning, alternatives, implementation markers, or a negative-prompt tail.
+Before returning, verify price scope, effective duration, exactly one `[Shot 1]`, no cut language, silent audio fields, valid aspect ratio, image labels, endpoint timing, causal motion, and completed exit or exact endpoint settle. When an exact background marker is active, verify that every required H3 field repeats the same `#RRGGBB` and keeps that full-frame field unchanged for the entire video. Do not output reasoning, alternatives, Markdown fences, negative-prompt tails, or `--wm false`.

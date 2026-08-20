@@ -53,25 +53,41 @@ def _读取meta值(skill_dir: str, key: str) -> str:
     return ""
 
 
-def _读取giftmaster_manifest(skill_dir: str) -> dict:
-    path = os.path.join(skill_dir, "giftmaster.json")
+def _读取json对象(path: str, label: str) -> dict:
     if not os.path.isfile(path):
         return {}
     try:
         data = json.loads(_读取文本(path))
     except json.JSONDecodeError as exc:
-        raise ValueError(f"{os.path.basename(skill_dir)}/giftmaster.json 不是有效 JSON。") from exc
+        raise ValueError(f"{label} 不是有效 JSON。") from exc
     if not isinstance(data, dict):
-        raise ValueError(f"{os.path.basename(skill_dir)}/giftmaster.json 顶层必须是对象。")
+        raise ValueError(f"{label} 顶层必须是对象。")
     return data
 
 
-def _列出references(skill_dir: str) -> list[str]:
-    reference_dir = os.path.join(skill_dir, "references")
-    if not os.path.isdir(reference_dir):
+def _读取giftmaster_manifest(skill_dir: str) -> dict:
+    return _读取json对象(
+        os.path.join(skill_dir, "giftmaster.json"),
+        f"{os.path.basename(skill_dir)}/giftmaster.json",
+    )
+
+
+def _读取registry(skill_dir: str, manifest: dict) -> dict:
+    relative_path = str(manifest.get("registry_file") or "").replace("\\", "/").strip("/")
+    if not relative_path:
+        return {}
+    return _读取json对象(
+        os.path.join(skill_dir, *relative_path.split("/")),
+        f"{os.path.basename(skill_dir)}/{relative_path}",
+    )
+
+
+def _列出资源目录(skill_dir: str, directory_name: str) -> list[str]:
+    resource_dir = os.path.join(skill_dir, directory_name)
+    if not os.path.isdir(resource_dir):
         return []
     files = []
-    for root, _, names in os.walk(reference_dir):
+    for root, _, names in os.walk(resource_dir):
         for name in names:
             if os.path.splitext(name)[1].lower() not in (".md", ".txt", ".yaml", ".yml", ".json"):
                 continue
@@ -97,9 +113,17 @@ def 发现skills() -> list[dict]:
         content_path = chinese_path if os.path.isfile(chinese_path) else default_path
         metadata = _解析前置信息(_读取文本(content_path))
         manifest = _读取giftmaster_manifest(skill_dir)
+        registry = _读取registry(skill_dir, manifest)
         runtime_references = manifest.get("runtime_references", [])
         if not isinstance(runtime_references, list) or not all(isinstance(item, str) for item in runtime_references):
             runtime_references = []
+        rules = _列出资源目录(skill_dir, "rules")
+        all_references = _列出资源目录(skill_dir, "references")
+        evaluation_only = manifest.get("evaluation_only_references", [])
+        if not isinstance(evaluation_only, list) or not all(isinstance(item, str) for item in evaluation_only):
+            evaluation_only = []
+        evaluation_only = [str(item).replace("\\", "/").strip("/") for item in evaluation_only]
+        references = [path for path in all_references if path not in evaluation_only]
         name = _读取meta值(skill_dir, "display-name-zh") or manifest.get("display_name") or metadata.get("name") or skill_id
         description = _读取meta值(skill_dir, "summary-cn") or metadata.get("description") or ""
         label = f"{name} [{skill_id}]" if name != skill_id else skill_id
@@ -110,9 +134,14 @@ def 发现skills() -> list[dict]:
                 "label": label,
                 "description": description,
                 "skill_file": os.path.basename(content_path),
-                "references": _列出references(skill_dir),
+                "references": references,
+                "rules": rules,
+                "resources": sorted(set(rules + all_references)),
+                "evaluation_only_references": evaluation_only,
                 "runtime_references": [str(item).replace("\\", "/").strip("/") for item in runtime_references],
                 "profile": str(manifest.get("profile") or ""),
+                "manifest": manifest,
+                "registry": registry,
             }
         )
     return skills
@@ -136,8 +165,9 @@ def 读取skill正文(skill: dict) -> str:
 
 def 读取reference(skill: dict, relative_path: str) -> str:
     normalized = str(relative_path or "").replace("\\", "/").strip("/")
-    if normalized not in skill["references"]:
-        raise ValueError(f"Skill reference 不存在：{normalized}")
+    allowed = skill.get("resources") or skill.get("references") or []
+    if normalized not in allowed:
+        raise ValueError(f"Skill 资源不存在：{normalized}")
     skill_dir = os.path.realpath(os.path.join(SKILLS_DIR, skill["id"]))
     path = os.path.realpath(os.path.join(skill_dir, normalized))
     if os.path.commonpath([skill_dir, path]) != skill_dir:
