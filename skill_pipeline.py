@@ -457,7 +457,10 @@ def _检查礼物profile(
     aspect = _解析礼物画幅(task)
     if aspect not in ("1:1", "4:3"):
         errors.append(f"低价礼物有效画幅只能是 1:1 或 4:3，当前为 {aspect or '未指定'}")
-    elif not re.search(rf"(?<!\d){re.escape(aspect).replace(':', r'\s*:\s*')}(?!\d)", description):
+    elif not re.search(
+        r"(?<!\d)" + re.escape(aspect).replace(":", r"\s*:\s*") + r"(?!\d)",
+        description,
+    ):
         errors.append(f"低价礼物提示词必须明确写出 {aspect} 画幅")
 
     background_color = _解析礼物背景色(task)
